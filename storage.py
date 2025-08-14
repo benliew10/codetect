@@ -246,4 +246,20 @@ class Storage:
 					unused_total = int(row2[0]) if row2 else 0
 				return used_count, unused_total
 
+	async def clear_all_codes(self) -> int:
+		"""Delete all codes from storage. Returns number of rows removed."""
+		async with self._lock:
+			async with aiosqlite.connect(self.db_path) as db:
+				await db.execute("PRAGMA journal_mode=WAL;")
+				await db.execute("PRAGMA synchronous=NORMAL;")
+				await db.execute("BEGIN IMMEDIATE;")
+				# Count total rows first
+				async with db.execute("SELECT COUNT(*) FROM codes;") as cur:
+					row = await cur.fetchone()
+					total = int(row[0]) if row else 0
+				# Delete all
+				await db.execute("DELETE FROM codes;")
+				await db.commit()
+				return total
+
 

@@ -73,21 +73,21 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 	if update.effective_chat.type == ChatType.PRIVATE:
 		await update.effective_chat.send_message(
 			"发送文本或 .txt 文件（每行一个兑换码）来上传。\n"
-			"在群组中，管理员可用 /fa 发布一个未使用的兑换码。"
+			"在群组中，管理员可发送‘发码’发布一个未使用的兑换码。"
 		)
 	else:
-		await update.effective_chat.send_message("你好！管理员可以使用 /fa 在这里发送兑换码。")
+		await update.effective_chat.send_message("你好！管理员可以发送‘发码’在这里发送兑换码。")
 
 
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 	await update.effective_chat.send_message(
-		"指令：\n"
-		"/fa - 在当前群发送一个未使用的兑换码（仅管理员）\n"
-		"/yuliang - 显示剩余未使用兑换码数量（仅管理员）\n"
-		"/yongliang - 显示各管理员今日与累计发放数量（仅管理员）\n"
-		"/shangchuan - 私聊中，回复文本或 .txt 文件进行批量上传（仅管理员）\n"
-		"/chongzhi - 私聊中，重置所有兑换码为未使用（仅管理员）\n"
-		"管理员可在私聊上传兑换码（文本或 .txt）。"
+		"指令（中文触发与兼容斜杠）：\n"
+		"发码 /fa - 在当前群发送一个未使用的兑换码（仅管理员）\n"
+		"余量 /yuliang - 显示剩余未使用兑换码数量（仅管理员）\n"
+		"用量 /yongliang - 显示各管理员今日与累计发放数量（仅管理员）\n"
+		"上传 /shangchuan - 私聊中，回复文本或 .txt 文件进行批量上传（仅管理员）\n"
+		"重置 /chongzhi - 私聊中，清空所有兑换码（仅管理员）\n"
+		"提示：若要在群里使用中文触发词，需在 BotFather 将隐私模式关闭。"
 	)
 
 
@@ -261,9 +261,9 @@ async def cmd_reset(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 	if user is None or chat is None or not _is_admin(user.id) or chat.type != ChatType.PRIVATE:
 		await update.effective_chat.send_message("无权限或上下文错误。请在私聊中使用该指令。")
 		return
-	used_count, unused_total = await storage.reset_all_codes()
+	deleted = await storage.clear_all_codes()
 	await update.effective_chat.send_message(
-		f"已重置：清除已使用 {used_count} 条，现在未使用共 {unused_total} 条。"
+		f"已清空：共删除 {deleted} 条兑换码。"
 	)
 
 
