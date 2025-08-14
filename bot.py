@@ -83,8 +83,8 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 	await update.effective_chat.send_message(
 		"指令（中文触发与兼容斜杠）：\n"
 		"发码 /fa - 在当前群发送一个未使用的兑换码（仅管理员）\n"
-		"余量 /yuliang - 显示剩余未使用兑换码数量（仅管理员）\n"
-		"用量 /yongliang - 显示各管理员今日与累计发放数量（仅管理员）\n"
+		"余量 /yuliang - 显示剩余未使用兑换码数量（所有用户）\n"
+		"用量 /yongliang - 显示各管理员今日与累计发放数量（所有用户）\n"
 		"上传 /shangchuan - 私聊中，回复文本或 .txt 文件进行批量上传（仅管理员）\n"
 		"重置 /chongzhi - 私聊中，清空所有兑换码（仅管理员）\n"
 		"提示：若要在群里使用中文触发词，需在 BotFather 将隐私模式关闭。"
@@ -141,7 +141,10 @@ async def handle_private_upload(update: Update, context: ContextTypes.DEFAULT_TY
 
 async def cmd_distribute(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 	user = update.effective_user
-	if user is None or not _is_admin(user.id):
+	if user is None:
+		return
+	# Only admin authorization check for this command
+	if not _is_admin(user.id):
 		await update.effective_chat.send_message("无权限。")
 		return
 
@@ -163,18 +166,18 @@ async def cmd_distribute(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 async def cmd_remaining(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 	user = update.effective_user
-	if user is None or not _is_admin(user.id):
-		await update.effective_chat.send_message("无权限。")
+	if user is None:
 		return
+	# No admin check - allow all users to see remaining count
 	remaining = await storage.count_unused()
 	await update.effective_chat.send_message(f"剩余未使用：{remaining} 条")
 
 
 async def cmd_usage(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 	user = update.effective_user
-	if user is None or not _is_admin(user.id):
-		await update.effective_chat.send_message("无权限。")
+	if user is None:
 		return
+	# No admin check - allow all users to see usage stats
 	counts_total = await storage.usage_counts_with_names()
 	counts_today = await storage.usage_counts_with_names_today()
 	grand_total = await storage.total_used_count()
@@ -267,6 +270,22 @@ async def cmd_reset(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 	)
 
 
+async def handle_chinese_commands(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+	"""Handle Chinese word commands in group chats."""
+	message = update.effective_message
+	if message is None or message.text is None:
+		return
+	
+	text = message.text.strip()
+	
+	if text == "发码":
+		await cmd_distribute(update, context)
+	elif text == "余量":
+		await cmd_remaining(update, context)
+	elif text == "用量":
+		await cmd_usage(update, context)
+
+
 def main() -> None:
 	# Create and set an event loop explicitly (Python 3.13 compatibility)
 	loop = asyncio.new_event_loop()
@@ -284,8 +303,12 @@ def main() -> None:
 	app.add_handler(CommandHandler("yongliang", cmd_usage))
 	app.add_handler(CommandHandler("shangchuan", cmd_upload))
 	app.add_handler(CommandHandler("chongzhi", cmd_reset))
+	
+	# Chinese word commands (work in groups and private)
+	chinese_filter = filters.TEXT & ~filters.COMMAND
+	app.add_handler(MessageHandler(chinese_filter, handle_chinese_commands))
 
-	# Private chat uploads: text or .txt documents
+	# Private chat uploads: text or .txt documents (admin only via existing handler)
 	private_text_filter = filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND
 	private_doc_filter = (
 		filters.ChatType.PRIVATE
