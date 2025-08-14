@@ -73,19 +73,20 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 	if update.effective_chat.type == ChatType.PRIVATE:
 		await update.effective_chat.send_message(
 			"发送文本或 .txt 文件（每行一个兑换码）来上传。\n"
-			"在群组中，管理员可用 /发码 发布一个未使用的兑换码。"
+			"在群组中，管理员可用 /fa 发布一个未使用的兑换码。"
 		)
 	else:
-		await update.effective_chat.send_message("你好！管理员可以使用 /发码 在这里发送兑换码。")
+		await update.effective_chat.send_message("你好！管理员可以使用 /fa 在这里发送兑换码。")
 
 
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 	await update.effective_chat.send_message(
 		"指令：\n"
-		"/发码 - 在当前群发送一个未使用的兑换码（仅管理员）\n"
-		"/余量 - 显示剩余未使用兑换码数量（仅管理员）\n"
-		"/用量 - 显示各管理员已发放数量（仅管理员）\n"
-		"/上传 - 私聊中，回复文本或 .txt 文件进行批量上传（仅管理员）\n"
+		"/fa - 在当前群发送一个未使用的兑换码（仅管理员）\n"
+		"/yuliang - 显示剩余未使用兑换码数量（仅管理员）\n"
+		"/yongliang - 显示各管理员今日与累计发放数量（仅管理员）\n"
+		"/shangchuan - 私聊中，回复文本或 .txt 文件进行批量上传（仅管理员）\n"
+		"/chongzhi - 私聊中，重置所有兑换码为未使用（仅管理员）\n"
 		"管理员可在私聊上传兑换码（文本或 .txt）。"
 	)
 
@@ -278,11 +279,11 @@ def main() -> None:
 	# Commands
 	app.add_handler(CommandHandler("start", cmd_start))
 	app.add_handler(CommandHandler("help", cmd_help))
-	app.add_handler(CommandHandler("发码", cmd_distribute, filters=filters.ChatType.GROUPS))
-	app.add_handler(CommandHandler("余量", cmd_remaining))
-	app.add_handler(CommandHandler("用量", cmd_usage))
-	app.add_handler(CommandHandler("上传", cmd_upload))
-	app.add_handler(CommandHandler("重置", cmd_reset))
+	app.add_handler(CommandHandler("fa", cmd_distribute, filters=filters.ChatType.GROUPS))
+	app.add_handler(CommandHandler("yuliang", cmd_remaining))
+	app.add_handler(CommandHandler("yongliang", cmd_usage))
+	app.add_handler(CommandHandler("shangchuan", cmd_upload))
+	app.add_handler(CommandHandler("chongzhi", cmd_reset))
 
 	# Private chat uploads: text or .txt documents
 	private_text_filter = filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND
