@@ -28,6 +28,16 @@ class Storage:
 				);
 				"""
 			)
+			await db.execute(
+				"""
+				CREATE TABLE IF NOT EXISTS users (
+					user_id INTEGER PRIMARY KEY,
+					display_name TEXT,
+					username TEXT,
+					updated_at TEXT
+				);
+				"""
+			)
 			await db.commit()
 
 	async def insert_codes(self, codes: List[str], uploaded_by: int) -> Tuple[int, int]:
@@ -136,5 +146,104 @@ class Storage:
 						continue
 					results.append((int(r[0]), int(r[1])))
 				return results
+
+	async def upsert_user(self, user_id: int, display_name: str, username: Optional[str]) -> None:
+		"""Insert or update a user's display name and username."""
+		now_iso = datetime.now(timezone.utc).isoformat()
+		async with aiosqlite.connect(self.db_path) as db:
+			await db.execute(
+				"""
+				INSERT INTO users (user_id, display_name, username, updated_at)
+				VALUES (?, ?, ?, ?)
+				ON CONFLICT(user_id) DO UPDATE SET
+					display_name = excluded.display_name,
+					username = excluded.username,
+					updated_at = excluded.updated_at;
+				""",
+				(user_id, display_name, username, now_iso),
+			)
+			await db.commit()
+
+	async def usage_counts_with_names(self) -> List[Tuple[int, Optional[str], Optional[str], int]]:
+		"""Return list of (user_id, display_name, username, count)."""
+		async with aiosqlite.connect(self.db_path) as db:
+			async with db.execute(
+				"""
+				SELECT c.used_by, u.display_name, u.username, COUNT(*) as cnt
+				FROM codes c
+				LEFT JOIN users u ON u.user_id = c.used_by
+				WHERE c.is_used = 1 AND c.used_by IS NOT NULL
+				GROUP BY c.used_by, u.display_name, u.username
+				ORDER BY cnt DESC;
+				"""
+			) as cursor:
+				rows = await cursor.fetchall()
+				results: List[Tuple[int, Optional[str], Optional[str], int]] = []
+				for r in rows:
+					uid = int(r[0]) if r[0] is not None else 0
+					dname = str(r[1]) if r[1] is not None else None
+					uname = str(r[2]) if r[2] is not None else None
+					cnt = int(r[3])
+					results.append((uid, dname, uname, cnt))
+				return results
+
+	async def usage_counts_with_names_today(self) -> List[Tuple[int, Optional[str], Optional[str], int]]:
+		"""Return list of (user_id, display_name, username, count) for current UTC day."""
+		async with aiosqlite.connect(self.db_path) as db:
+			async with db.execute(
+				"""
+				SELECT c.used_by, u.display_name, u.username, COUNT(*) as cnt
+				FROM codes c
+				LEFT JOIN users u ON u.user_id = c.used_by
+				WHERE c.is_used = 1 AND c.used_by IS NOT NULL AND date(c.used_at) = date('now')
+				GROUP BY c.used_by, u.display_name, u.username
+				ORDER BY cnt DESC;
+				"""
+			) as cursor:
+				rows = await cursor.fetchall()
+				results: List[Tuple[int, Optional[str], Optional[str], int]] = []
+				for r in rows:
+					uid = int(r[0]) if r[0] is not None else 0
+					dname = str(r[1]) if r[1] is not None else None
+					uname = str(r[2]) if r[2] is not None else None
+					cnt = int(r[3])
+					results.append((uid, dname, uname, cnt))
+				return results
+
+	async def total_used_count(self) -> int:
+		async with aiosqlite.connect(self.db_path) as db:
+			async with db.execute("SELECT COUNT(*) FROM codes WHERE is_used = 1;") as cursor:
+				row = await cursor.fetchone()
+				return int(row[0]) if row is not None else 0
+
+	async def total_used_today(self) -> int:
+		async with aiosqlite.connect(self.db_path) as db:
+			async with db.execute(
+				"SELECT COUNT(*) FROM codes WHERE is_used = 1 AND date(used_at) = date('now');"
+			) as cursor:
+				row = await cursor.fetchone()
+				return int(row[0]) if row is not None else 0
+
+	async def reset_all_codes(self) -> Tuple[int, int]:
+		"""Reset all codes to unused. Returns (reset_count, total_unused_after)."""
+		async with self._lock:
+			async with aiosqlite.connect(self.db_path) as db:
+				await db.execute("PRAGMA journal_mode=WAL;")
+				await db.execute("PRAGMA synchronous=NORMAL;")
+				await db.execute("BEGIN IMMEDIATE;")
+				# Count used codes
+				async with db.execute("SELECT COUNT(*) FROM codes WHERE is_used = 1;") as cur:
+					row = await cur.fetchone()
+					used_count = int(row[0]) if row else 0
+				# Reset them
+				await db.execute(
+					"UPDATE codes SET is_used = 0, used_by = NULL, used_at = NULL WHERE is_used = 1;"
+				)
+				await db.commit()
+				# Count total unused after
+				async with db.execute("SELECT COUNT(*) FROM codes WHERE is_used = 0;") as cur2:
+					row2 = await cur2.fetchone()
+					unused_total = int(row2[0]) if row2 else 0
+				return used_count, unused_total
 
 

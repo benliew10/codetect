@@ -72,23 +72,21 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 	user = update.effective_user
 	if update.effective_chat.type == ChatType.PRIVATE:
 		await update.effective_chat.send_message(
-			"Send me text or a .txt file with one code per line to upload.\n"
-			"In a group, use /distribute to post one unused code."
+			"发送文本或 .txt 文件（每行一个兑换码）来上传。\n"
+			"在群组中，管理员可用 /发码 发布一个未使用的兑换码。"
 		)
 	else:
-		await update.effective_chat.send_message(
-			"Hello! Admins can use /distribute here to post a code."
-		)
+		await update.effective_chat.send_message("你好！管理员可以使用 /发码 在这里发送兑换码。")
 
 
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 	await update.effective_chat.send_message(
-		"Commands:\n"
-		"/distribute - Post one unused code to the current chat (admins only)\n"
-		"/remaining - Show how many unused codes are left (admins only)\n"
-		"/usage - Show how many codes each admin has distributed (admins only)\n"
-		"/upload - Reply with text or .txt file to batch upload (admins only)\n"
-		"Upload codes by DM'ing this bot with text or a .txt file (admins only)."
+		"指令：\n"
+		"/发码 - 在当前群发送一个未使用的兑换码（仅管理员）\n"
+		"/余量 - 显示剩余未使用兑换码数量（仅管理员）\n"
+		"/用量 - 显示各管理员已发放数量（仅管理员）\n"
+		"/上传 - 私聊中，回复文本或 .txt 文件进行批量上传（仅管理员）\n"
+		"管理员可在私聊上传兑换码（文本或 .txt）。"
 	)
 
 
@@ -98,8 +96,11 @@ async def handle_private_upload(update: Update, context: ContextTypes.DEFAULT_TY
 	if user is None or message is None:
 		return
 	if not _is_admin(user.id):
-		await update.effective_chat.send_message("Not authorized.")
+		await update.effective_chat.send_message("无权限。")
 		return
+
+	# Record/refresh admin display name & username
+	await storage.upsert_user(user_id=user.id, display_name=getattr(user, "full_name", user.first_name or ""), username=user.username)
 
 	codes: List[str] = []
 	# Text upload
@@ -111,7 +112,7 @@ async def handle_private_upload(update: Update, context: ContextTypes.DEFAULT_TY
 		is_text_mime = (doc.mime_type or "").startswith("text/")
 		is_txt_ext = (doc.file_name or "").lower().endswith(".txt")
 		if not (is_text_mime or is_txt_ext):
-			await update.effective_chat.send_message("Please upload a .txt file or send plain text.")
+			await update.effective_chat.send_message("请上传 .txt 文件或发送纯文本。")
 			return
 		file = await doc.get_file()
 		buffer = BytesIO()
@@ -123,34 +124,37 @@ async def handle_private_upload(update: Update, context: ContextTypes.DEFAULT_TY
 			text = data.decode("latin-1", errors="ignore")
 		codes = _extract_codes_from_text(text)
 	else:
-		await update.effective_chat.send_message("Send text or a .txt file with codes (one per line).")
+		await update.effective_chat.send_message("发送文本或 .txt 文件（每行一个兑换码）。")
 		return
 
 	if not codes:
-		await update.effective_chat.send_message("No codes found in your message.")
+		await update.effective_chat.send_message("未在消息中找到兑换码。")
 		return
 
 	inserted, duplicates = await storage.insert_codes(codes=codes, uploaded_by=user.id)
 	remaining = await storage.count_unused()
 	await update.effective_chat.send_message(
-		f"Uploaded: {inserted} new | Duplicates ignored: {duplicates} | Unused total: {remaining}"
+		f"上传成功：新增 {inserted} 条｜忽略重复 {duplicates} 条｜剩余未使用 {remaining} 条"
 	)
 
 
 async def cmd_distribute(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 	user = update.effective_user
 	if user is None or not _is_admin(user.id):
-		await update.effective_chat.send_message("Not authorized.")
+		await update.effective_chat.send_message("无权限。")
 		return
+
+	# Record/refresh admin display name & username
+	await storage.upsert_user(user_id=user.id, display_name=getattr(user, "full_name", user.first_name or ""), username=user.username)
 
 	code_value = await storage.get_and_mark_next_unused(used_by=user.id)
 	if code_value is None:
-		await update.effective_chat.send_message("No unused codes remaining.")
+		await update.effective_chat.send_message("没有可用的兑换码，请先上传。")
 		return
 
 	# Render the code in monospaced formatting
 	await update.effective_chat.send_message(
-		f"Distributed code:\n<code>{code_value}</code>",
+		f"兑换码：\n<code>{code_value}</code>",
 		parse_mode=ParseMode.HTML,
 		disable_web_page_preview=True,
 	)
@@ -159,24 +163,46 @@ async def cmd_distribute(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 async def cmd_remaining(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 	user = update.effective_user
 	if user is None or not _is_admin(user.id):
-		await update.effective_chat.send_message("Not authorized.")
+		await update.effective_chat.send_message("无权限。")
 		return
 	remaining = await storage.count_unused()
-	await update.effective_chat.send_message(f"Unused codes left: {remaining}")
+	await update.effective_chat.send_message(f"剩余未使用：{remaining} 条")
 
 
 async def cmd_usage(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 	user = update.effective_user
 	if user is None or not _is_admin(user.id):
-		await update.effective_chat.send_message("Not authorized.")
+		await update.effective_chat.send_message("无权限。")
 		return
-	counts = await storage.usage_counts()
-	if not counts:
-		await update.effective_chat.send_message("No codes distributed yet.")
-		return
-	lines = ["Usage per user (user_id: count):"]
-	for uid, cnt in counts:
-		lines.append(f"- {uid}: {cnt}")
+	counts_total = await storage.usage_counts_with_names()
+	counts_today = await storage.usage_counts_with_names_today()
+	grand_total = await storage.total_used_count()
+	grand_today = await storage.total_used_today()
+
+	lines = ["发放统计："]
+	lines.append(f"- 今日总计：{grand_today}")
+	lines.append(f"- 累计总计：{grand_total}")
+	lines.append("")
+	lines.append("今日各管理员：")
+	if counts_today:
+		for uid, display_name, username, cnt in counts_today:
+			name = display_name or (f"@{username}" if username else str(uid))
+			if username and display_name:
+				name = f"{display_name} (@{username})"
+			lines.append(f"  • {name}：{cnt}")
+	else:
+		lines.append("  • 无")
+	lines.append("")
+	lines.append("累计各管理员：")
+	if counts_total:
+		for uid, display_name, username, cnt in counts_total:
+			name = display_name or (f"@{username}" if username else str(uid))
+			if username and display_name:
+				name = f"{display_name} (@{username})"
+			lines.append(f"  • {name}：{cnt}")
+	else:
+		lines.append("  • 无")
+
 	await update.effective_chat.send_message("\n".join(lines))
 
 
@@ -185,11 +211,11 @@ async def cmd_upload(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 	user = update.effective_user
 	chat = update.effective_chat
 	if user is None or chat is None or not _is_admin(user.id) or chat.type != ChatType.PRIVATE:
-		await update.effective_chat.send_message("Not authorized or wrong context. Use this in a private chat.")
+		await update.effective_chat.send_message("无权限或上下文错误。请在私聊中使用该指令。")
 		return
 
 	if not update.effective_message or not update.effective_message.reply_to_message:
-		await update.effective_chat.send_message("Reply to a text or .txt message with /upload.")
+		await update.effective_chat.send_message("请回复一条文本或 .txt 文件消息后再发送 /上传。")
 		return
 
 	msg = update.effective_message.reply_to_message
@@ -201,7 +227,7 @@ async def cmd_upload(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 		is_text_mime = (doc.mime_type or "").startswith("text/")
 		is_txt_ext = (doc.file_name or "").lower().endswith(".txt")
 		if not (is_text_mime or is_txt_ext):
-			await update.effective_chat.send_message("Please reply to a .txt file or plain text message.")
+			await update.effective_chat.send_message("请回复 .txt 文件或纯文本消息。")
 			return
 		file = await doc.get_file()
 		buffer = BytesIO()
@@ -213,17 +239,30 @@ async def cmd_upload(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 			text = data.decode("latin-1", errors="ignore")
 		codes = _extract_codes_from_text(text)
 	else:
-		await update.effective_chat.send_message("Unsupported message type. Reply to text or .txt file.")
+		await update.effective_chat.send_message("不支持的消息类型。请回复文本或 .txt 文件。")
 		return
 
 	if not codes:
-		await update.effective_chat.send_message("No codes found in the replied message.")
+		await update.effective_chat.send_message("未在被回复的消息中找到兑换码。")
 		return
 
 	inserted, duplicates = await storage.insert_codes(codes=codes, uploaded_by=user.id)
 	remaining = await storage.count_unused()
 	await update.effective_chat.send_message(
-		f"Uploaded: {inserted} new | Duplicates ignored: {duplicates} | Unused total: {remaining}"
+		f"上传成功：新增 {inserted} 条｜忽略重复 {duplicates} 条｜剩余未使用 {remaining} 条"
+	)
+
+
+async def cmd_reset(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+	"""Admin-only: Reset all codes to unused. Private chat only."""
+	user = update.effective_user
+	chat = update.effective_chat
+	if user is None or chat is None or not _is_admin(user.id) or chat.type != ChatType.PRIVATE:
+		await update.effective_chat.send_message("无权限或上下文错误。请在私聊中使用该指令。")
+		return
+	used_count, unused_total = await storage.reset_all_codes()
+	await update.effective_chat.send_message(
+		f"已重置：清除已使用 {used_count} 条，现在未使用共 {unused_total} 条。"
 	)
 
 
@@ -239,10 +278,11 @@ def main() -> None:
 	# Commands
 	app.add_handler(CommandHandler("start", cmd_start))
 	app.add_handler(CommandHandler("help", cmd_help))
-	app.add_handler(CommandHandler("distribute", cmd_distribute, filters=filters.ChatType.GROUPS))
-	app.add_handler(CommandHandler("remaining", cmd_remaining))
-	app.add_handler(CommandHandler("usage", cmd_usage))
-	app.add_handler(CommandHandler("upload", cmd_upload))
+	app.add_handler(CommandHandler("发码", cmd_distribute, filters=filters.ChatType.GROUPS))
+	app.add_handler(CommandHandler("余量", cmd_remaining))
+	app.add_handler(CommandHandler("用量", cmd_usage))
+	app.add_handler(CommandHandler("上传", cmd_upload))
+	app.add_handler(CommandHandler("重置", cmd_reset))
 
 	# Private chat uploads: text or .txt documents
 	private_text_filter = filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND
