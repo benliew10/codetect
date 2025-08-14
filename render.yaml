@@ -1,0 +1,21 @@
+services:
+  - type: worker
+    name: telegram-code-distributor
+    env: python
+    plan: free
+    buildCommand: |
+      pip install -r requirements.txt
+    startCommand: |
+      python bot.py
+    envVars:
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: ADMIN_IDS
+        sync: false
+      - key: DB_PATH
+        value: /var/data/codes.db
+    disk:
+      name: data
+      mountPath: /var/data
+      sizeGB: 1
+
