@@ -231,7 +231,7 @@ def main() -> None:
 	# Initialize storage (async) before starting the bot
 	asyncio.run(storage.initialize())
 
-	app = Application.builder().token(BOT_TOKEN).parse_mode(ParseMode.HTML).build()
+	app = Application.builder().token(BOT_TOKEN).build()
 
 	# Commands
 	app.add_handler(CommandHandler("start", cmd_start))
