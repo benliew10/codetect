@@ -73,16 +73,16 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 	if update.effective_chat.type == ChatType.PRIVATE:
 		await update.effective_chat.send_message(
 			"发送文本或 .txt 文件（每行一个兑换码）来上传。\n"
-			"在群组中，管理员可发送‘发码’发布一个未使用的兑换码。"
+			"在群组中，任何用户都可发送'发码'获取一个未使用的兑换码。"
 		)
 	else:
-		await update.effective_chat.send_message("你好！管理员可以发送‘发码’在这里发送兑换码。")
+		await update.effective_chat.send_message("你好！任何用户都可以发送'发码'在这里获取兑换码。")
 
 
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 	await update.effective_chat.send_message(
 		"指令（中文触发与兼容斜杠）：\n"
-		"发码 /fa - 在当前群发送一个未使用的兑换码（仅管理员）\n"
+		"发码 /fa - 在当前群发送一个未使用的兑换码（所有用户）\n"
 		"余量 /yuliang - 显示剩余未使用兑换码数量（所有用户）\n"
 		"用量 /yongliang - 显示各管理员今日与累计发放数量（所有用户）\n"
 		"上传 /shangchuan - 私聊中，回复文本或 .txt 文件进行批量上传（仅管理员）\n"
@@ -143,12 +143,8 @@ async def cmd_distribute(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 	user = update.effective_user
 	if user is None:
 		return
-	# Only admin authorization check for this command
-	if not _is_admin(user.id):
-		await update.effective_chat.send_message("无权限。")
-		return
-
-	# Record/refresh admin display name & username
+	
+	# Record/refresh user display name & username (for any user now)
 	await storage.upsert_user(user_id=user.id, display_name=getattr(user, "full_name", user.first_name or ""), username=user.username)
 
 	code_value = await storage.get_and_mark_next_unused(used_by=user.id)
