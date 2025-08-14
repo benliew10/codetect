@@ -228,8 +228,11 @@ async def cmd_upload(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
 
 def main() -> None:
+	# Create and set an event loop explicitly (Python 3.13 compatibility)
+	loop = asyncio.new_event_loop()
+	asyncio.set_event_loop(loop)
 	# Initialize storage (async) before starting the bot
-	asyncio.run(storage.initialize())
+	loop.run_until_complete(storage.initialize())
 
 	app = Application.builder().token(BOT_TOKEN).build()
 
